@@ -1,18 +1,20 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard,
   LogOut,
   Menu,
   X,
   type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Logo } from '@/components/shared/Logo'
 import { UserAvatar } from '@/components/shared/UserAvatar'
+import { NotificationBell } from '@/components/shared/NotificationBell'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/auth.store'
 import type { UserRole } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import { buyerApi } from '@/api/buyer.api'
 
 export interface NavItem {
   label: string
@@ -25,12 +27,19 @@ interface DashboardLayoutProps {
   navItems: NavItem[]
 }
 
-export function DashboardLayout({ navItems }: DashboardLayoutProps) {
+export function DashboardLayout({ role, navItems }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+
+  // Get cart count for BUYER role
+  const { data: cartItems = [] } = useQuery({
+    queryKey: ['cart', user?.id],
+    queryFn: () => buyerApi.getCart(user!.id),
+    enabled: !!user?.id && role === 'BUYER',
+  })
 
   const handleLogout = () => {
     logout()
@@ -69,6 +78,8 @@ export function DashboardLayout({ navItems }: DashboardLayoutProps) {
           {navItems.map((item) => {
             const isActive = location.pathname === item.href
             const Icon = item.icon
+            const showBadge = role === 'BUYER' && item.href === '/buyer/cart' && cartItems.length > 0
+
             return (
               <Link
                 key={item.href}
@@ -83,6 +94,11 @@ export function DashboardLayout({ navItems }: DashboardLayoutProps) {
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 {item.label}
+                {showBadge && (
+                  <span className="ml-auto inline-flex items-center justify-center rounded-full bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white">
+                    {cartItems.length}
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -115,7 +131,7 @@ export function DashboardLayout({ navItems }: DashboardLayoutProps) {
             <Menu className="h-5 w-5" />
           </button>
           <div className="flex flex-1 items-center justify-end gap-2">
-            <LayoutDashboard className="hidden h-5 w-5 text-slate-400 sm:block" />
+            <NotificationBell />
           </div>
         </header>
 

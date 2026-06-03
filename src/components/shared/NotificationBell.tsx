@@ -24,11 +24,13 @@ export function NotificationBell() {
     enabled: Boolean(user?.id),
   })
 
-  const { data: unreadCount = 0 } = useQuery({
+  const { data: unreadNotifications = [] } = useQuery({
     queryKey: ['notifications-unread', user?.id],
-    queryFn: () => notificationApi.getUnreadCount(user!.id),
+    queryFn: () => notificationApi.getUnread(user!.id),
     enabled: Boolean(user?.id),
   })
+
+  const unreadCount = unreadNotifications.length
 
   const markRead = useMutation({
     mutationFn: notificationApi.markAsRead,
@@ -86,14 +88,14 @@ export function NotificationBell() {
               key={notification.id}
               className={cn(
                 'flex cursor-pointer flex-col items-start gap-1 p-3',
-                !notification.read && 'bg-brand-50/50',
+                !notification.isRead && 'bg-brand-50/50',
               )}
-              onClick={() => !notification.read && markRead.mutate(notification.id)}
+              onClick={() => !notification.isRead && markRead.mutate(notification.id)}
             >
               <span className="font-medium text-slate-900">{notification.title}</span>
               <span className="text-xs text-slate-500 line-clamp-2">{notification.message}</span>
               <span className="text-xs text-slate-400">
-                {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                {formatDistanceToNow(new Date(notification.sentAt), { addSuffix: true })}
               </span>
             </DropdownMenuItem>
           ))
