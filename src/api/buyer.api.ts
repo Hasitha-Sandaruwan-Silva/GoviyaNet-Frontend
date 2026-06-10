@@ -23,6 +23,8 @@ export const buyerApi = {
   createOrder: (data: OrderCreateRequest) =>
     apiClient.post<Order>('/api/orders', data).then((res) => res.data),
 
+  getAllOrders: () => apiClient.get<Order[]>('/api/orders').then((res) => res.data),
+
   getOrder: (id: number) =>
     apiClient.get<Order>(`/api/orders/${id}`).then((res) => res.data),
 
