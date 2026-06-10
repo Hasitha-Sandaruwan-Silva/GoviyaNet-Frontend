@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { CardSkeleton } from '@/components/shared/SkeletonLoaders'
 import { Button } from '@/components/ui/button'
 import { farmerApi } from '@/api/farmer.api'
 import { buyerApi } from '@/api/buyer.api'
@@ -86,7 +87,11 @@ export function BuyerBrowsePage() {
 
       {/* Produce Grid */}
       {isLoading ? (
-        <div className="text-center py-12 text-slate-500">Loading produce...</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <AppCard>
           <EmptyState

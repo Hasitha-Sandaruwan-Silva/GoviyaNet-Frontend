@@ -6,6 +6,7 @@ import { AppCard } from '@/components/shared/AppCard'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { CardSkeleton } from '@/components/shared/SkeletonLoaders'
 import { useAuthStore } from '@/store/auth.store'
 import { farmerApi } from '@/api/farmer.api'
 import { useToast } from '@/hooks/useToast'
@@ -57,7 +58,9 @@ export function FarmerProfilePage() {
           description="Manage your farm details and verification status."
           icon={User}
         />
-        <div className="text-center text-slate-500">Loading profile...</div>
+        <div className="grid gap-6">
+          <CardSkeleton />
+        </div>
       </>
     )
   }

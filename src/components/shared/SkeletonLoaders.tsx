@@ -45,3 +45,24 @@ export function StatsGridSkeleton() {
     </div>
   )
 }
+
+export function ListSkeleton({ count = 3, className }: { count?: number; className?: string }) {
+  return (
+    <div className={cn('space-y-4', className)}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-2xl border border-slate-200 bg-white p-6 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Skeleton className="h-4 w-1/2" />
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-4 w-1/4" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

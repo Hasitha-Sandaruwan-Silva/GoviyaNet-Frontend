@@ -13,7 +13,14 @@ export const ORDER_STATUSES = [
 ] as const
 export type OrderStatus = (typeof ORDER_STATUSES)[number]
 
-export const DELIVERY_STATUSES = ['PICKED_UP', 'DELIVERED'] as const
+export const DELIVERY_STATUSES = [
+  'PENDING',
+  'ASSIGNED',
+  'PICKED_UP',
+  'IN_TRANSIT',
+  'DELIVERED',
+  'FAILED',
+] as const
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number]
 
 export const VEHICLE_TYPES = [
@@ -100,4 +107,13 @@ export const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
   DISPATCHED: 'bg-purple-100 text-purple-700',
   DELIVERED: 'bg-green-100 text-green-700',
   CANCELLED: 'bg-red-100 text-red-700',
+}
+
+export const DELIVERY_STATUS_COLORS: Record<string, string> = {
+  PENDING:    'bg-amber-100 text-amber-700',
+  ASSIGNED:   'bg-blue-100 text-blue-700',
+  PICKED_UP:  'bg-purple-100 text-purple-700',
+  IN_TRANSIT: 'bg-indigo-100 text-indigo-700',
+  DELIVERED:  'bg-green-100 text-green-700',
+  FAILED:     'bg-red-100 text-red-700',
 }

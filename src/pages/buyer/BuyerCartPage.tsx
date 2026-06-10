@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { AppCard } from '@/components/shared/AppCard'
+import { ListSkeleton } from '@/components/shared/SkeletonLoaders'
 import { Button } from '@/components/ui/button'
 import { buyerApi } from '@/api/buyer.api'
 import { useAuthStore } from '@/store/auth.store'
@@ -51,7 +52,7 @@ export function BuyerCartPage() {
           description="Review items before checkout."
           icon={ShoppingCart}
         />
-        <div className="text-center text-slate-500">Loading cart...</div>
+        <ListSkeleton count={2} />
       </>
     )
   }

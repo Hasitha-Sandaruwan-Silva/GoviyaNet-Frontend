@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { AppCard } from '@/components/shared/AppCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { ListSkeleton } from '@/components/shared/SkeletonLoaders'
 import { farmerApi } from '@/api/farmer.api'
 import { useAuthStore } from '@/store/auth.store'
 import { useToast } from '@/hooks/useToast'
@@ -25,9 +26,11 @@ export function FarmerProducePage() {
   const [profileForm, setProfileForm] = useState({
     farmName: '', location: '', nic: '',
   })
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingStock, setEditingStock] = useState('')
 
   // Get farmer profile
-  const { data: farmer, isLoading: farmerLoading } = useQuery<Farmer>({
+  const { data: farmer, isLoading: farmerLoading, error: farmerError } = useQuery<Farmer>({
     queryKey: ['farmer', user?.id],
     queryFn: () => farmerApi.getByUserId(user!.id),
     enabled: !!user?.id,
@@ -86,9 +89,40 @@ export function FarmerProducePage() {
     onError: (e) => toast.error('Failed', parseApiError(e)),
   })
 
-  if (farmerLoading) return <div className="p-8 text-center text-slate-500">Loading...</div>
+  // Update stock mutation
+  const updateStock = useMutation({
+    mutationFn: (data: { id: number; stock: number }) =>
+      farmerApi.updateStock(data.id, data.stock),
+    onSuccess: () => {
+      toast.success('Stock updated!', 'Produce stock level has been updated.')
+      setEditingId(null)
+      setEditingStock('')
+      queryClient.invalidateQueries({ queryKey: ['produce'] })
+    },
+    onError: (e) => toast.error('Failed to update stock', parseApiError(e)),
+  })
 
-  // No farmer profile yet
+  if (farmerLoading) {
+    return (
+      <>
+        <PageHeader title="My Produce" description="Loading farm profile..." icon={Package} />
+        <ListSkeleton count={3} />
+      </>
+    )
+  }
+
+  if (farmerError) {
+    return (
+      <>
+        <PageHeader title="My Produce" description="Manage your produce listings." icon={Package} />
+        <AppCard className="border-red-200 bg-red-50 text-red-700">
+          Failed to load farm profile. Please try again.
+        </AppCard>
+      </>
+    )
+  }
+
+  // No farm profile yet
   if (!farmer) return (
     <>
       <PageHeader title="My Produce" description="First, register your farm profile." icon={Package} />
@@ -151,7 +185,7 @@ export function FarmerProducePage() {
 
       {/* Produce Grid */}
       {produceLoading ? (
-        <div className="text-center text-slate-500">Loading produce...</div>
+        <ListSkeleton count={3} />
       ) : produce.length === 0 ? (
         <AppCard>
           <EmptyState icon={Package} title="No produce listed yet" description="Click Add Produce to list your first item." actionLabel="Add Produce" onAction={() => setShowAddForm(true)} />
@@ -177,14 +211,54 @@ export function FarmerProducePage() {
                   <p className="font-medium text-slate-900">{p.stockKg} {p.unit}</p>
                 </div>
               </div>
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="outline" className="gap-1 flex-1">
-                  <Pencil className="h-3 w-3" /> Edit
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1 text-red-600 hover:bg-red-50" onClick={() => deleteProduce.mutate(p.id)} disabled={deleteProduce.isPending}>
-                  <Trash2 className="h-3 w-3" /> Delete
-                </Button>
-              </div>
+
+              {editingId === p.id ? (
+                <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 mt-3">
+                  <label className="text-xs text-slate-500 font-medium">Update Stock ({p.unit})</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      className="w-full rounded-lg border px-2 py-1 text-sm"
+                      value={editingStock}
+                      onChange={(e) => setEditingStock(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      disabled={updateStock.isPending}
+                      onClick={() => updateStock.mutate({ id: p.id, stock: Number(editingStock) })}
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingId(null)
+                        setEditingStock('')
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 flex-1"
+                    onClick={() => {
+                      setEditingId(p.id)
+                      setEditingStock(String(p.stockKg))
+                    }}
+                  >
+                    <Pencil className="h-3 w-3" /> Edit Stock
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1 text-red-600 hover:bg-red-50" onClick={() => deleteProduce.mutate(p.id)} disabled={deleteProduce.isPending}>
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </Button>
+                </div>
+              )}
             </AppCard>
           ))}
         </div>

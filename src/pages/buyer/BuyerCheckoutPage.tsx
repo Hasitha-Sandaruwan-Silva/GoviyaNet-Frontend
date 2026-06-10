@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { CardSkeleton } from '@/components/shared/SkeletonLoaders'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -77,7 +78,10 @@ export function BuyerCheckoutPage() {
           description="Delivery address and order review."
           icon={CreditCard}
         />
-        <div className="text-center text-slate-500">Loading...</div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
       </>
     )
   }

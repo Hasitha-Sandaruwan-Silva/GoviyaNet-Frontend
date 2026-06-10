@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { ListSkeleton } from '@/components/shared/SkeletonLoaders'
 import { Button } from '@/components/ui/button'
 import { farmerApi } from '@/api/farmer.api'
 import { buyerApi } from '@/api/buyer.api'
@@ -53,7 +54,7 @@ export function FarmerOrdersPage() {
           description="View and update orders from buyers."
           icon={ClipboardList}
         />
-        <div className="text-center text-slate-500">Loading orders...</div>
+        <ListSkeleton count={3} />
       </>
     )
   }
@@ -92,6 +93,26 @@ export function FarmerOrdersPage() {
     )
   }
 
+  // Calculate order statuses counts
+  const pendingCount = orders.filter((o) => o.status === 'PENDING').length
+  const activeCount = orders.filter((o) => o.status === 'CONFIRMED' || o.status === 'DISPATCHED').length
+  const completedCount = orders.filter((o) => o.status === 'DELIVERED').length
+
+  // Sort orders: active first (PENDING -> CONFIRMED -> DISPATCHED), then completed (DELIVERED -> CANCELLED)
+  const statusOrder = {
+    PENDING: 1,
+    CONFIRMED: 2,
+    DISPATCHED: 3,
+    DELIVERED: 4,
+    CANCELLED: 5,
+  }
+
+  const sortedOrders = [...orders].sort((a, b) => {
+    const scoreA = statusOrder[a.status as keyof typeof statusOrder] ?? 99
+    const scoreB = statusOrder[b.status as keyof typeof statusOrder] ?? 99
+    return scoreA - scoreB
+  })
+
   return (
     <>
       <PageHeader
@@ -99,8 +120,25 @@ export function FarmerOrdersPage() {
         description="View and update orders from buyers."
         icon={ClipboardList}
       />
+
+      {/* Summary strip */}
+      <div className="mb-6 flex flex-wrap gap-3">
+        <div className="flex items-center gap-2 rounded-xl bg-amber-50 px-3.5 py-2">
+          <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="text-sm font-medium text-amber-700">{pendingCount} pending</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl bg-blue-50 px-3.5 py-2">
+          <Truck className="h-4 w-4 text-blue-600" />
+          <span className="text-sm font-medium text-blue-700">{activeCount} processing</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl bg-green-50 px-3.5 py-2">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <span className="text-sm font-medium text-green-700">{completedCount} delivered</span>
+        </div>
+      </div>
+
       <div className="space-y-4">
-        {orders.map((order) => (
+        {sortedOrders.map((order) => (
           <AppCard key={order.id} variant="default">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex-1">
