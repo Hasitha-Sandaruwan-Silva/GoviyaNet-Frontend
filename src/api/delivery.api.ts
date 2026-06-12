@@ -38,4 +38,9 @@ export const deliveryApi = {
 
   updateDeliveryStatus: (id: number, data: DeliveryStatusUpdateRequest) =>
     apiClient.put<Delivery>(`/api/deliveries/${id}/status`, data).then((res) => res.data),
+
+  getAllDeliveries: () => apiClient.get<Delivery[]>('/api/deliveries').then((res) => res.data),
+
+  assignRider: (id: number, riderId: number) =>
+    apiClient.put<Delivery>(`/api/deliveries/${id}/assign`, { riderId }).then((res) => res.data),
 }

@@ -20,7 +20,7 @@ export function NotificationBell() {
 
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications', user?.id],
-    queryFn: () => notificationApi.getByUser(user!.id),
+    queryFn: () => notificationApi.getUserNotifications(user!.id),
     enabled: Boolean(user?.id),
   })
 

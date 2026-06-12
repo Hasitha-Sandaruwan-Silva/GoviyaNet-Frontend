@@ -109,8 +109,8 @@ export function BuyerBrowsePage() {
                   <p className="font-semibold text-slate-900">{p.name}</p>
                   <p className="text-xs text-slate-500">{p.category}</p>
                 </div>
-                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                  Available
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${p.stockKg > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {p.stockKg > 0 ? `${p.stockKg} kg available` : 'Out of stock'}
                 </span>
               </div>
 
@@ -128,25 +128,27 @@ export function BuyerBrowsePage() {
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex items-center rounded-lg border border-slate-200">
                   <button
-                    className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-l-lg"
+                    className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-l-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={p.stockKg === 0}
                     onClick={() => setQuantities((q) => ({ ...q, [p.id]: Math.max(1, (q[p.id] ?? 1) - 1) }))}
                   >−</button>
                   <span className="px-3 py-1 text-sm font-medium min-w-[2rem] text-center">
-                    {quantities[p.id] ?? 1}
+                    {p.stockKg === 0 ? 0 : (quantities[p.id] ?? 1)}
                   </span>
                   <button
-                    className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-r-lg"
-                    onClick={() => setQuantities((q) => ({ ...q, [p.id]: (q[p.id] ?? 1) + 1 }))}
+                    className="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded-r-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={p.stockKg === 0 || (quantities[p.id] ?? 1) >= p.stockKg}
+                    onClick={() => setQuantities((q) => ({ ...q, [p.id]: Math.min(p.stockKg, (q[p.id] ?? 1) + 1) }))}
                   >+</button>
                 </div>
                 <Button
                   size="sm"
                   className="flex-1 gap-1"
                   onClick={() => addToCart.mutate(p)}
-                  disabled={addToCart.isPending}
+                  disabled={addToCart.isPending || p.stockKg === 0}
                 >
                   <ShoppingCart className="h-3 w-3" />
-                  Add to Cart
+                  {p.stockKg === 0 ? 'Out of Stock' : 'Add to Cart'}
                 </Button>
               </div>
             </AppCard>

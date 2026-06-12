@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { buyerApi } from '@/api/buyer.api'
+import { farmerApi } from '@/api/farmer.api'
 import { useAuthStore } from '@/store/auth.store'
 import { useToast } from '@/hooks/useToast'
 import { parseApiError } from '@/lib/utils'
@@ -44,6 +45,18 @@ export function BuyerCheckoutPage() {
       }
       const deliveryAddress = `${district}, ${addressLine}`
       
+      // Validation BEFORE placing order
+      for (const item of cartItems) {
+        const produceList = await farmerApi.getProduceByFarmer(item.farmerId)
+        const produce = produceList.find((p) => p.id === item.produceId)
+        if (!produce) {
+          throw new Error(`Produce not found`)
+        }
+        if (item.quantity > produce.stockKg) {
+          throw new Error(`Only ${produce.stockKg} kg available in stock for ${produce.name}`)
+        }
+      }
+
       // Create one order per cart item
       const orderPromises = cartItems.map((item) =>
         buyerApi.createOrder({
@@ -57,6 +70,16 @@ export function BuyerCheckoutPage() {
       )
       
       await Promise.all(orderPromises)
+      
+      // Update stock
+      for (const item of cartItems) {
+        const produceList = await farmerApi.getProduceByFarmer(item.farmerId)
+        const produce = produceList.find((p) => p.id === item.produceId)
+        if (produce) {
+          const newStock = produce.stockKg - item.quantity
+          await farmerApi.updateStock(produce.id, newStock)
+        }
+      }
       
       // Clear cart after successful orders
       await buyerApi.clearCart(user!.id)

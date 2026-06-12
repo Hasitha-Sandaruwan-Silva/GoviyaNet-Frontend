@@ -19,6 +19,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/store/auth.store'
 import { deliveryApi } from '@/api/delivery.api'
+import { buyerApi } from '@/api/buyer.api'
 import { useToast } from '@/hooks/useToast'
 import { parseApiError, cn } from '@/lib/utils'
 import { DELIVERY_STATUS_COLORS } from '@/lib/constants'
@@ -80,7 +81,7 @@ function StatusProgress({ status }: { status?: string }) {
 interface DeliveryCardProps {
   delivery: Delivery
   isPendingMutation: boolean
-  onUpdateStatus: (deliveryId: number, status: string) => void
+  onUpdateStatus: (deliveryId: number, orderId: number, status: string) => void
 }
 
 function DeliveryCard({ delivery, isPendingMutation, onUpdateStatus }: DeliveryCardProps) {
@@ -188,7 +189,7 @@ function DeliveryCard({ delivery, isPendingMutation, onUpdateStatus }: DeliveryC
             {/* ASSIGNED → PICKED_UP */}
             {status === 'ASSIGNED' && (
               <Button
-                onClick={() => onUpdateStatus(delivery.id, 'PICKED_UP')}
+                onClick={() => onUpdateStatus(delivery.id, delivery.orderId, 'PICKED_UP')}
                 disabled={isPendingMutation}
                 className="w-full gap-2 sm:w-auto"
               >
@@ -202,7 +203,7 @@ function DeliveryCard({ delivery, isPendingMutation, onUpdateStatus }: DeliveryC
             {(status === 'PENDING' || !delivery.status) && (
               <Button
                 variant="outline"
-                onClick={() => onUpdateStatus(delivery.id, 'PICKED_UP')}
+                onClick={() => onUpdateStatus(delivery.id, delivery.orderId, 'PICKED_UP')}
                 disabled={isPendingMutation}
                 className="w-full gap-2 sm:w-auto"
               >
@@ -214,7 +215,7 @@ function DeliveryCard({ delivery, isPendingMutation, onUpdateStatus }: DeliveryC
             {/* PICKED_UP → IN_TRANSIT */}
             {status === 'PICKED_UP' && (
               <Button
-                onClick={() => onUpdateStatus(delivery.id, 'IN_TRANSIT')}
+                onClick={() => onUpdateStatus(delivery.id, delivery.orderId, 'IN_TRANSIT')}
                 disabled={isPendingMutation}
                 className="w-full gap-2 sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white"
               >
@@ -227,7 +228,7 @@ function DeliveryCard({ delivery, isPendingMutation, onUpdateStatus }: DeliveryC
             {/* IN_TRANSIT → DELIVERED */}
             {status === 'IN_TRANSIT' && (
               <Button
-                onClick={() => onUpdateStatus(delivery.id, 'DELIVERED')}
+                onClick={() => onUpdateStatus(delivery.id, delivery.orderId, 'DELIVERED')}
                 disabled={isPendingMutation}
                 className="w-full gap-2 sm:w-auto bg-green-600 hover:bg-green-700 text-white"
               >
@@ -286,12 +287,37 @@ export function RiderDeliveriesPage() {
 
   // ── Update delivery status mutation ────────────────────────────────────────
   const updateStatus = useMutation({
-    mutationFn: ({ deliveryId, status }: { deliveryId: number; status: string }) =>
-      deliveryApi.updateDeliveryStatus(deliveryId, { status }),
+    mutationFn: async ({ deliveryId, orderId, status }: { deliveryId: number; orderId?: number; status: string }) => {
+      // 1. Update delivery status
+      await deliveryApi.updateDeliveryStatus(deliveryId, { status })
+      
+      // 2. Map delivery status to order status
+      const orderStatusMap: Record<string, any> = {
+        ASSIGNED: null,
+        PICKED_UP: 'DISPATCHED',
+        IN_TRANSIT: 'DISPATCHED',
+        DELIVERED: 'DELIVERED',
+        FAILED: 'CANCELLED',
+      }
+      
+      const newOrderStatus = orderStatusMap[status]
+      
+      // 3. Update order status if needed
+      if (newOrderStatus && orderId) {
+        try {
+          await buyerApi.updateOrderStatus(orderId, { status: newOrderStatus })
+        } catch (err) {
+          console.error('Order status sync failed:', err)
+        }
+      }
+    },
     onSuccess: (_, { status }) => {
       const label = status.toLowerCase().replace(/_/g, ' ')
       toast.success('Status updated', `Delivery marked as ${label}`)
       queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['all-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['all-deliveries'] })
     },
     onError: (e) => toast.error('Update failed', parseApiError(e)),
   })
@@ -436,7 +462,7 @@ export function RiderDeliveriesPage() {
                 key={delivery.id}
                 delivery={delivery}
                 isPendingMutation={updateStatus.isPending}
-                onUpdateStatus={(id, status) => updateStatus.mutate({ deliveryId: id, status })}
+                onUpdateStatus={(id, orderId, status) => updateStatus.mutate({ deliveryId: id, orderId, status })}
               />
             ))}
           </motion.div>
@@ -460,7 +486,7 @@ export function RiderDeliveriesPage() {
                 key={delivery.id}
                 delivery={delivery}
                 isPendingMutation={updateStatus.isPending}
-                onUpdateStatus={(id, status) => updateStatus.mutate({ deliveryId: id, status })}
+                onUpdateStatus={(id, orderId, status) => updateStatus.mutate({ deliveryId: id, orderId, status })}
               />
             ))}
           </motion.div>

@@ -2,7 +2,10 @@ import { apiClient } from '@/api/axios'
 import type { Notification } from '@/types'
 
 export const notificationApi = {
-  getByUser: (userId: number) =>
+  createNotification: (data: Partial<Notification>) =>
+    apiClient.post<Notification>('/api/notifications', data).then((res) => res.data),
+
+  getUserNotifications: (userId: number) =>
     apiClient
       .get<Notification[]>(`/api/notifications/user/${userId}`)
       .then((res) => res.data),

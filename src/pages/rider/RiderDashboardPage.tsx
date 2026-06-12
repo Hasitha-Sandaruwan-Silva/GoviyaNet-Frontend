@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Bike, User, MapPin, Star, Package, TrendingUp, Zap, Clock, ChevronRight } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+import { Bike, User, MapPin, Star, Package, TrendingUp, Zap, Clock, ChevronRight, CheckCircle2, RefreshCw } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -11,11 +12,13 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { StatsGridSkeleton } from '@/components/shared/SkeletonLoaders'
 import { useAuthStore } from '@/store/auth.store'
 import { deliveryApi } from '@/api/delivery.api'
+import { buyerApi } from '@/api/buyer.api'
+import { farmerApi } from '@/api/farmer.api'
 import { useToast } from '@/hooks/useToast'
 import { parseApiError, cn } from '@/lib/utils'
 import { VEHICLE_TYPES, DELIVERY_STATUS_COLORS } from '@/lib/constants'
 import { staggerContainer, staggerItem, fadeInUp } from '@/lib/animations'
-import type { Rider, Delivery } from '@/types'
+import type { Rider, Delivery, Order } from '@/types'
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 interface StatCardProps {
@@ -74,6 +77,10 @@ export function RiderDashboardPage() {
     currentLocation: '',
   })
 
+  // Per-order fee state (rider can set their own price per order)
+  const [orderFees, setOrderFees] = useState<Record<number, number>>({})
+  const getOrderFee = (orderId: number) => orderFees[orderId] ?? 250
+
   // ── Queries ──────────────────────────────────────────────────────────────
   const { data: riders = [], isLoading: ridersLoading } = useQuery<Rider[]>({
     queryKey: ['riders'],
@@ -93,6 +100,19 @@ export function RiderDashboardPage() {
     enabled: !!rider?.id,
   })
 
+  // ── Available Orders Queries ──────────────────────────────────────────────────
+  const { data: allOrders = [], isLoading: ordersLoading, refetch: refetchOrders } = useQuery<Order[]>({
+    queryKey: ['orders', 'all'],
+    queryFn: () => buyerApi.getAllOrders(),
+    enabled: !!rider?.available,
+  })
+
+  const { data: allDeliveries = [], isLoading: allDeliveriesLoading } = useQuery<Delivery[]>({
+    queryKey: ['deliveries', 'all'],
+    queryFn: () => deliveryApi.getAllDeliveries(),
+    enabled: !!rider?.available,
+  })
+
   // ── Stats ─────────────────────────────────────────────────────────────────
   const deliveredCount = deliveries.filter((d) => d.status === 'DELIVERED').length
   const activeCount = deliveries.filter((d) =>
@@ -104,6 +124,16 @@ export function RiderDashboardPage() {
   const recentDeliveries = deliveries
     .filter((d) => d.status !== 'DELIVERED' && d.status !== 'FAILED')
     .slice(0, 3)
+
+  // Available orders for pickup
+  const availableOrders = allOrders.filter((order) => {
+    if (order.status !== 'CONFIRMED') return false
+    const hasDelivery = allDeliveries.some((d) => d.orderId === order.id)
+    if (hasDelivery) return false
+    return true
+  }).sort((a, b) => new Date(b.orderedAt || 0).getTime() - new Date(a.orderedAt || 0).getTime())
+
+  const isAvailableOrdersLoading = ordersLoading || allDeliveriesLoading
 
   // ── Mutations ─────────────────────────────────────────────────────────────
   const registerRider = useMutation({
@@ -137,6 +167,42 @@ export function RiderDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['riders'] })
     },
     onError: (e) => toast.error('Failed', parseApiError(e)),
+  })
+
+  const [acceptingOrderId, setAcceptingOrderId] = useState<number | null>(null)
+
+  const acceptDelivery = useMutation({
+    mutationFn: async ({ order, fee }: { order: Order; fee: number }) => {
+      let pickupAddress = `Farmer's Location - Order #${order.id}`
+      try {
+        const farmer = await farmerApi.getById(order.farmerId)
+        if (farmer?.location) pickupAddress = farmer.location
+      } catch (err) {
+        console.warn('Failed to fetch farmer location, using fallback.')
+      }
+
+      const newDelivery = await deliveryApi.createDelivery({
+        orderId: order.id,
+        pickupAddress,
+        deliveryAddress: order.deliveryAddress,
+        deliveryFee: fee,
+        notes: '',
+      })
+
+      await deliveryApi.assignRider(newDelivery.id, rider!.id)
+      return newDelivery
+    },
+    onMutate: ({ order }) => setAcceptingOrderId(order.id),
+    onSuccess: () => {
+      toast.success('Delivery Accepted', 'The order has been assigned to you.')
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+      setAcceptingOrderId(null)
+    },
+    onError: (e) => {
+      toast.error('Failed to accept delivery', parseApiError(e))
+      setAcceptingOrderId(null)
+    },
   })
 
   const isLoading = ridersLoading || deliveriesLoading
@@ -403,6 +469,132 @@ export function RiderDashboardPage() {
           value={rider.rating != null ? rider.rating.toFixed(1) : '—'}
           sub="Customer rating"
         />
+      </motion.div>
+
+      {/* ── Available Orders for Pickup ─────────────────────────────────────── */}
+      <motion.div variants={fadeInUp} initial="hidden" animate="visible" className="mb-8">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Available Orders</h2>
+            <p className="text-sm text-slate-500">Pick up these ready orders</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-slate-500 hover:text-brand-600"
+            onClick={() => refetchOrders()}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+
+        {!rider.available ? (
+          <AppCard>
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
+                <Bike className="h-7 w-7 text-slate-400" />
+              </div>
+              <p className="font-medium text-slate-700">Go online to see available orders</p>
+            </div>
+          </AppCard>
+        ) : isAvailableOrdersLoading ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <AppCard key={i} className="animate-pulse flex flex-col justify-between">
+                <div>
+                  <div className="mb-3 h-5 w-24 rounded bg-slate-200"></div>
+                  <div className="mb-4 h-12 w-full rounded bg-slate-100"></div>
+                  <div className="mb-5 h-10 w-full rounded bg-slate-100"></div>
+                </div>
+                <div className="mt-auto border-t border-slate-100 pt-4 flex gap-3">
+                  <div className="h-10 w-16 rounded bg-slate-200"></div>
+                  <div className="h-10 w-full rounded bg-slate-200"></div>
+                </div>
+              </AppCard>
+            ))}
+          </div>
+        ) : availableOrders.length === 0 ? (
+          <AppCard>
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50">
+                <CheckCircle2 className="h-7 w-7 text-brand-400" />
+              </div>
+              <p className="font-medium text-slate-700">No orders available right now</p>
+              <p className="text-sm text-slate-400">New orders will appear here automatically when buyers confirm them</p>
+            </div>
+          </AppCard>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {availableOrders.map((order) => (
+              <AppCard key={order.id} hover className="flex flex-col justify-between">
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="font-semibold text-slate-900">Order #{order.id}</span>
+                    <span className="text-xs font-medium text-slate-500">
+                      {order.orderedAt ? formatDistanceToNow(new Date(order.orderedAt), { addSuffix: true }) : ''}
+                    </span>
+                  </div>
+                  <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 p-2.5">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-100">
+                      <Package className="h-4 w-4 text-brand-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {order.produce?.name || 'Produce'} - {order.quantity}kg
+                      </p>
+                      <p className="text-xs text-slate-500">Ready for pickup</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 mb-5">
+                    <div className="flex items-start gap-2 text-sm text-slate-600">
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                      <div>
+                        <p className="font-medium text-slate-900">Drop-off</p>
+                        <p className="line-clamp-2 text-xs text-slate-500">{order.deliveryAddress}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-auto flex items-end gap-3 border-t border-slate-100 pt-4">
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500 block mb-1">Your Fee (LKR)</label>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-semibold text-slate-600">LKR</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={10}
+                        value={getOrderFee(order.id)}
+                        onChange={(e) =>
+                          setOrderFees((prev) => ({
+                            ...prev,
+                            [order.id]: Math.max(0, Number(e.target.value) || 0),
+                          }))
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() =>
+                      acceptDelivery.mutate({ order, fee: getOrderFee(order.id) })
+                    }
+                    disabled={
+                      acceptingOrderId !== null ||
+                      acceptDelivery.isPending ||
+                      getOrderFee(order.id) <= 0
+                    }
+                    className="shrink-0"
+                  >
+                    {acceptingOrderId === order.id ? 'Accepting...' : 'Accept Delivery'}
+                  </Button>
+                </div>
+              </AppCard>
+            ))}
+          </div>
+        )}
       </motion.div>
 
       {/* ── Active Deliveries Preview ──────────────────────────────────────── */}
