@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { ClipboardList, XCircle, Bike, Phone, MapPin, Clock } from 'lucide-react'
+import {
+  ClipboardList,
+  XCircle,
+  Bike,
+  Phone,
+  MapPin,
+  Clock,
+  PackageCheck,
+  Sparkles,
+} from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
@@ -12,6 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { buyerApi } from '@/api/buyer.api'
 import { farmerApi } from '@/api/farmer.api'
 import { deliveryApi } from '@/api/delivery.api'
+import { notificationApi } from '@/api/notification.api'
 import { useAuthStore } from '@/store/auth.store'
 import { useToast } from '@/hooks/useToast'
 import { parseApiError, cn } from '@/lib/utils'
@@ -39,28 +49,29 @@ export function BuyerOrdersPage() {
   const toast = useToast()
   const queryClient = useQueryClient()
 
-  // Load orders
+  // ── Orders ──
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ['orders', user?.id],
     queryFn: () => buyerApi.getOrdersByBuyer(user!.id),
     enabled: !!user?.id,
+    refetchInterval: 10000, // ✅ Auto refresh every 10s
   })
 
-  // Load all deliveries (so we can match by orderId)
+  // ── All deliveries ──
   const { data: allDeliveries = [] } = useQuery<Delivery[]>({
     queryKey: ['deliveries', 'all'],
     queryFn: () => deliveryApi.getAllDeliveries(),
     enabled: !!user?.id,
+    refetchInterval: 10000, // ✅ Auto refresh
   })
 
-  // Load all riders (so we can show rider details)
+  // ── All riders ──
   const { data: allRiders = [] } = useQuery<Rider[]>({
     queryKey: ['riders'],
     queryFn: () => deliveryApi.getRiders(),
     enabled: !!user?.id,
   })
 
-  // Helper: get delivery + rider info for a specific order
   const getDeliveryInfo = (orderId: number) => {
     const delivery = allDeliveries.find((d) => d.orderId === orderId)
     if (!delivery) return null
@@ -70,10 +81,23 @@ export function BuyerOrdersPage() {
 
   const [activeTab, setActiveTab] = useState('active')
 
-  // Cancel order mutation
+  // ── Cancel Order Mutation ──
   const cancelOrder = useMutation({
     mutationFn: async (order: Order) => {
-      await buyerApi.cancelOrder(order.id)
+      try {
+        await buyerApi.cancelOrder(order.id)
+      } catch (e) {
+        const err = e as {
+          response?: { status?: number; data?: { message?: string } }
+        }
+        if (err.response?.status === 400) {
+          const serverMsg = err.response.data?.message
+          throw new Error(serverMsg || 'Invalid status transition.', {
+            cause: e,
+          })
+        }
+        throw e
+      }
 
       const produceList = await farmerApi.getProduceByFarmer(order.farmerId)
       const produce = produceList.find((p) => p.id === order.produceId)
@@ -85,6 +109,56 @@ export function BuyerOrdersPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       toast.success('Order cancelled', 'Your order has been cancelled.')
+    },
+    onError: (e) => toast.error('Failed', parseApiError(e)),
+  })
+
+  // ── ✅ Confirm Receipt Mutation ──
+  const confirmReceipt = useMutation({
+    mutationFn: async (order: Order) => {
+      // 1. Update order to DELIVERED
+      await buyerApi.updateOrderStatus(order.id, { status: 'DELIVERED' })
+
+      // 2. Notify farmer
+      try {
+        await notificationApi.createNotification({
+          userId: order.farmerId,
+          userRole: 'FARMER',
+          type: 'ORDER_DELIVERED',
+          title: 'Order Delivered & Confirmed ✓',
+          message: `Buyer confirmed receipt of order #${order.id}.`,
+          referenceId: order.id,
+          referenceType: 'ORDER',
+        })
+      } catch (err) {
+        console.warn('Failed to notify farmer:', err)
+      }
+
+      // 3. Notify rider (if assigned)
+      const info = getDeliveryInfo(order.id)
+      if (info?.rider) {
+        try {
+          await notificationApi.createNotification({
+            userId: info.rider.userId,
+            userRole: 'RIDER',
+            type: 'DELIVERY_CONFIRMED',
+            title: 'Delivery Confirmed ✓',
+            message: `Buyer confirmed receipt for delivery #${info.delivery.id}.`,
+            referenceId: order.id,
+            referenceType: 'ORDER',
+          })
+        } catch (err) {
+          console.warn('Failed to notify rider:', err)
+        }
+      }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['orders'] })
+      void queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+      toast.success(
+        'Receipt confirmed! 🎉',
+        'Thank you for using GoviyaNet.'
+      )
     },
     onError: (e) => toast.error('Failed', parseApiError(e)),
   })
@@ -121,7 +195,6 @@ export function BuyerOrdersPage() {
     )
   }
 
-  // Sort orders: active first, completed/cancelled last
   const statusOrder = {
     PENDING: 1,
     CONFIRMED: 2,
@@ -142,7 +215,7 @@ export function BuyerOrdersPage() {
   const completedOrders = sortedOrders.filter((o) => o.status === 'DELIVERED')
   const cancelledOrders = sortedOrders.filter((o) => o.status === 'CANCELLED')
 
-  // ── Delivery Info Card (inside each order) ─────────────────────────────
+  // ── Delivery Info / Rider Card ──
   const renderDeliveryInfo = (order: Order) => {
     if (order.status === 'CANCELLED' || order.status === 'PENDING') return null
 
@@ -166,23 +239,52 @@ export function BuyerOrdersPage() {
     }
 
     const { delivery, rider } = info
+    const deliveryIsDelivered = delivery.status === 'DELIVERED'
 
     return (
-      <div className="mt-4 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+      <div
+        className={cn(
+          'mt-4 rounded-xl border p-4',
+          deliveryIsDelivered
+            ? 'border-green-200 bg-gradient-to-br from-green-50 to-emerald-50'
+            : 'border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50'
+        )}
+      >
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 shadow-sm">
+            <div
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg shadow-sm',
+                deliveryIsDelivered ? 'bg-green-600' : 'bg-blue-600'
+              )}
+            >
               <Bike className="h-4 w-4 text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-blue-900">Rider Assigned</p>
-              <p className="text-xs text-blue-700">Your order is on the way</p>
+              <p
+                className={cn(
+                  'text-sm font-semibold',
+                  deliveryIsDelivered ? 'text-green-900' : 'text-blue-900'
+                )}
+              >
+                {deliveryIsDelivered ? 'Order Delivered!' : 'Rider Assigned'}
+              </p>
+              <p
+                className={cn(
+                  'text-xs',
+                  deliveryIsDelivered ? 'text-green-700' : 'text-blue-700'
+                )}
+              >
+                {deliveryIsDelivered
+                  ? 'Please confirm receipt below'
+                  : 'Your order is on the way'}
+              </p>
             </div>
           </div>
           <span
             className={cn(
               'rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize',
-              delivery.status === 'DELIVERED'
+              deliveryIsDelivered
                 ? 'bg-green-100 text-green-700'
                 : 'bg-blue-100 text-blue-700'
             )}
@@ -219,7 +321,6 @@ export function BuyerOrdersPage() {
             </div>
           </div>
 
-          {/* Delivery Fee */}
           <div className="rounded-lg bg-white/70 p-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
               Delivery Fee
@@ -234,6 +335,45 @@ export function BuyerOrdersPage() {
               </p>
             )}
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── ✅ Confirm Receipt Banner ──
+  const renderConfirmReceiptBanner = (order: Order) => {
+    const info = getDeliveryInfo(order.id)
+    if (!info) return null
+
+    // Show only when delivery is DELIVERED but order is still DISPATCHED
+    if (info.delivery.status !== 'DELIVERED') return null
+    if (order.status === 'DELIVERED') return null
+    if (order.status === 'CANCELLED') return null
+
+    return (
+      <div className="mt-4 overflow-hidden rounded-xl border-2 border-green-300 bg-gradient-to-br from-green-100 to-emerald-100 shadow-md">
+        <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 shadow-md">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-green-900">
+                🎉 Your order has arrived!
+              </p>
+              <p className="mt-0.5 text-sm text-green-800">
+                Please confirm that you received your order in good condition.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={() => confirmReceipt.mutate(order)}
+            disabled={confirmReceipt.isPending}
+            className="shrink-0 gap-2 bg-green-600 hover:bg-green-700 text-white shadow-md"
+          >
+            <PackageCheck className="h-4 w-4" />
+            {confirmReceipt.isPending ? 'Confirming...' : 'Confirm Receipt'}
+          </Button>
         </div>
       </div>
     )
@@ -309,7 +449,10 @@ export function BuyerOrdersPage() {
                 )}
               </div>
 
-              {/* ✅ Delivery / Rider Info */}
+              {/* ✅ CONFIRM RECEIPT BANNER (highest priority) */}
+              {renderConfirmReceiptBanner(order)}
+
+              {/* Delivery / Rider Info */}
               {renderDeliveryInfo(order)}
 
               {/* Progress Tracker */}

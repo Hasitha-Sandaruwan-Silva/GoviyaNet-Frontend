@@ -10,6 +10,7 @@ import {
   MapPin,
   ShieldCheck,
   Users,
+  Bell,
   type LucideIcon,
 } from 'lucide-react'
 import type { NavItem } from '@/components/layout/DashboardLayout'
@@ -20,6 +21,7 @@ export const FARMER_NAV: NavItem[] = [
   { label: 'Profile', href: '/farmer/profile', icon: User },
   { label: 'My Produce', href: '/farmer/produce', icon: Package },
   { label: 'Orders', href: '/farmer/orders', icon: ClipboardList },
+  { label: 'Notifications', href: '/farmer/notifications', icon: Bell },
 ]
 
 export const BUYER_NAV: NavItem[] = [
@@ -28,17 +30,20 @@ export const BUYER_NAV: NavItem[] = [
   { label: 'Cart', href: '/buyer/cart', icon: ShoppingCart },
   { label: 'My Orders', href: '/buyer/orders', icon: ClipboardList },
   { label: 'Market Prices', href: '/buyer/prices', icon: TrendingUp },
+  { label: 'Notifications', href: '/buyer/notifications', icon: Bell },
 ]
 
 export const RIDER_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/rider', icon: LayoutDashboard },
   { label: 'Deliveries', href: '/rider/deliveries', icon: MapPin },
+  { label: 'Notifications', href: '/rider/notifications', icon: Bell },
 ]
 
 export const ADMIN_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
   { label: 'Verify Farmers', href: '/admin/farmers', icon: Users },
   { label: 'Manage Prices', href: '/admin/prices', icon: TrendingUp },
+  { label: 'Notifications', href: '/admin/notifications', icon: Bell },
 ]
 
 export const ROLE_NAV: Record<UserRole, NavItem[]> = {

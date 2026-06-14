@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { ClipboardList, CheckCircle, Truck, XCircle, Bike, Phone, MapPin, Clock } from 'lucide-react'
+import {
+  ClipboardList,
+  CheckCircle,
+  Truck,
+  XCircle,
+  Bike,
+  Phone,
+  MapPin,
+  Clock,
+} from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
@@ -21,8 +30,9 @@ export function FarmerOrdersPage() {
   const user = useAuthStore((s) => s.user)
   const toast = useToast()
   const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState('active')
 
-  // Get farmer profile
+  // ── Farmer Profile ──────────────────────────────────────────────────
   const { data: farmer, isLoading: farmerLoading } = useQuery<Farmer>({
     queryKey: ['farmer', user?.id],
     queryFn: () => farmerApi.getByUserId(user!.id),
@@ -30,28 +40,30 @@ export function FarmerOrdersPage() {
     retry: false,
   })
 
-  // Get orders by farmer
+  // ── Orders ──────────────────────────────────────────────────────────
   const { data: orders = [], isLoading: ordersLoading } = useQuery<Order[]>({
     queryKey: ['orders', farmer?.id],
     queryFn: () => buyerApi.getOrdersByFarmer(farmer!.id),
     enabled: !!farmer?.id,
+    refetchInterval: 15000, // ✅ Auto refresh every 15s
   })
 
-  // Load all deliveries (match by orderId)
+  // ── Deliveries (match by orderId) ───────────────────────────────────
   const { data: allDeliveries = [] } = useQuery<Delivery[]>({
     queryKey: ['deliveries', 'all'],
     queryFn: () => deliveryApi.getAllDeliveries(),
     enabled: !!farmer?.id,
+    refetchInterval: 15000,
   })
 
-  // Load all riders
+  // ── Riders ──────────────────────────────────────────────────────────
   const { data: allRiders = [] } = useQuery<Rider[]>({
     queryKey: ['riders'],
     queryFn: () => deliveryApi.getRiders(),
     enabled: !!farmer?.id,
   })
 
-  // Helper: get delivery + rider info for an order
+  // ── Helper: delivery + rider info for an order ──────────────────────
   const getDeliveryInfo = (orderId: number) => {
     const delivery = allDeliveries.find((d) => d.orderId === orderId)
     if (!delivery) return null
@@ -59,24 +71,40 @@ export function FarmerOrdersPage() {
     return { delivery, rider }
   }
 
-  const [activeTab, setActiveTab] = useState('active')
-
-  // ✅ UPDATE STATUS MUTATION
+  // ── Update Status (CONFIRMED / CANCELLED only) ─────────────────────
   const updateStatus = useMutation({
     mutationFn: async (data: {
       order: Order
-      status: 'CONFIRMED' | 'DISPATCHED' | 'CANCELLED'
+      status: 'CONFIRMED' | 'CANCELLED'
     }) => {
       const { order, status } = data
 
-      await buyerApi.updateOrderStatus(order.id, { status })
+      try {
+        await buyerApi.updateOrderStatus(order.id, { status })
+      } catch (e) {
+        const err = e as {
+          response?: { status?: number; data?: { message?: string } }
+        }
+        if (err.response?.status === 400) {
+          const serverMsg = err.response.data?.message
+          throw new Error(serverMsg || 'Invalid status transition.', {
+            cause: e,
+          })
+        }
+        throw e
+      }
 
       if (status === 'CANCELLED') {
         const produceList = await farmerApi.getProduceByFarmer(farmer!.id)
         const produce = produceList.find((p) => p.id === order.produceId)
         if (produce) {
-          await farmerApi.updateStock(produce.id, produce.stockKg + order.quantity)
-          void queryClient.invalidateQueries({ queryKey: ['available-produce'] })
+          await farmerApi.updateStock(
+            produce.id,
+            produce.stockKg + order.quantity
+          )
+          void queryClient.invalidateQueries({
+            queryKey: ['available-produce'],
+          })
         }
       } else if (status === 'CONFIRMED') {
         // Notify Buyer
@@ -120,11 +148,15 @@ export function FarmerOrdersPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       void queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      toast.success('Status updated', 'Order status has been updated successfully.')
+      toast.success(
+        'Status updated',
+        'Order status has been updated successfully.'
+      )
     },
     onError: (e) => toast.error('Failed', parseApiError(e)),
   })
 
+  // ── Loading ─────────────────────────────────────────────────────────
   const isLoading = farmerLoading || ordersLoading
 
   if (isLoading) {
@@ -140,6 +172,7 @@ export function FarmerOrdersPage() {
     )
   }
 
+  // ── No Farmer Profile ───────────────────────────────────────────────
   if (!farmer) {
     return (
       <>
@@ -157,6 +190,7 @@ export function FarmerOrdersPage() {
     )
   }
 
+  // ── No Orders ───────────────────────────────────────────────────────
   if (orders.length === 0) {
     return (
       <>
@@ -174,13 +208,14 @@ export function FarmerOrdersPage() {
     )
   }
 
-  // Counts
+  // ── Counts ──────────────────────────────────────────────────────────
   const pendingCount = orders.filter((o) => o.status === 'PENDING').length
   const activeCount = orders.filter(
     (o) => o.status === 'CONFIRMED' || o.status === 'DISPATCHED'
   ).length
   const completedCount = orders.filter((o) => o.status === 'DELIVERED').length
 
+  // ── Sorting ─────────────────────────────────────────────────────────
   const statusOrder = {
     PENDING: 1,
     CONFIRMED: 2,
@@ -201,9 +236,8 @@ export function FarmerOrdersPage() {
   const completedOrders = sortedOrders.filter((o) => o.status === 'DELIVERED')
   const cancelledOrders = sortedOrders.filter((o) => o.status === 'CANCELLED')
 
-  // ── Pickup / Rider Info Card ───────────────────────────────────────────
+  // ── Pickup / Rider Info Card ────────────────────────────────────────
   const renderPickupInfo = (order: Order) => {
-    // Show only for CONFIRMED or DISPATCHED orders
     if (!['CONFIRMED', 'DISPATCHED'].includes(order.status)) return null
 
     const info = getDeliveryInfo(order.id)
@@ -219,7 +253,8 @@ export function FarmerOrdersPage() {
             </p>
           </div>
           <p className="mt-1 text-xs text-amber-700">
-            Notification sent to all available riders. Please keep the order ready.
+            Notification sent to all available riders. Please keep the order
+            ready.
           </p>
         </div>
       )
@@ -238,7 +273,9 @@ export function FarmerOrdersPage() {
               <p className="text-sm font-semibold text-green-900">
                 Rider Assigned for Pickup
               </p>
-              <p className="text-xs text-green-700">Please prepare the order</p>
+              <p className="text-xs text-green-700">
+                Please prepare the order
+              </p>
             </div>
           </div>
           <span
@@ -254,7 +291,7 @@ export function FarmerOrdersPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          {/* Rider */}
+          {/* Rider info */}
           <div className="rounded-lg bg-white/70 p-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
               Rider
@@ -301,6 +338,7 @@ export function FarmerOrdersPage() {
     )
   }
 
+  // ── Render Order List ───────────────────────────────────────────────
   const renderOrderList = (list: Order[]) => {
     if (list.length === 0) {
       return (
@@ -317,6 +355,7 @@ export function FarmerOrdersPage() {
         {list.map((order) => (
           <AppCard key={order.id} variant="default">
             <div className="flex flex-col gap-4">
+              {/* ── Header + Actions ─────────────────────────────── */}
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
@@ -325,6 +364,7 @@ export function FarmerOrdersPage() {
                     </h3>
                     <StatusBadge status={order.status} />
                   </div>
+
                   <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                     <div>
                       Quantity:{' '}
@@ -337,7 +377,8 @@ export function FarmerOrdersPage() {
                       <span className="font-medium text-slate-900">
                         LKR{' '}
                         {(
-                          order.totalPrice || order.quantity * order.pricePerKg!
+                          order.totalPrice ||
+                          order.quantity * order.pricePerKg!
                         ).toFixed(2)}
                       </span>
                     </div>
@@ -357,13 +398,19 @@ export function FarmerOrdersPage() {
                     )}
                   </div>
                 </div>
+
+                {/* ── Action Buttons / Status Labels ──────────────── */}
                 <div className="flex gap-2">
+                  {/* PENDING → Confirm / Reject */}
                   {order.status === 'PENDING' && (
                     <>
                       <Button
                         size="sm"
                         onClick={() =>
-                          updateStatus.mutate({ order, status: 'CONFIRMED' })
+                          updateStatus.mutate({
+                            order,
+                            status: 'CONFIRMED',
+                          })
                         }
                         disabled={updateStatus.isPending}
                         className="gap-2 bg-green-600 hover:bg-green-700 text-white"
@@ -375,7 +422,10 @@ export function FarmerOrdersPage() {
                         size="sm"
                         variant="destructive"
                         onClick={() =>
-                          updateStatus.mutate({ order, status: 'CANCELLED' })
+                          updateStatus.mutate({
+                            order,
+                            status: 'CANCELLED',
+                          })
                         }
                         disabled={updateStatus.isPending}
                         className="gap-2"
@@ -385,23 +435,58 @@ export function FarmerOrdersPage() {
                       </Button>
                     </>
                   )}
+
+                  {/* CONFIRMED → Waiting for Rider / Rider Assigned label */}
                   {order.status === 'CONFIRMED' && (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        updateStatus.mutate({ order, status: 'DISPATCHED' })
-                      }
-                      disabled={updateStatus.isPending}
-                      className="gap-2"
+                    <div
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
+                        getDeliveryInfo(order.id)
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'bg-amber-50 text-amber-700'
+                      )}
                     >
+                      {getDeliveryInfo(order.id) ? (
+                        <>
+                          <Bike className="h-4 w-4" />
+                          Rider Assigned
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="h-4 w-4 animate-pulse" />
+                          Waiting for Rider
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* DISPATCHED → On the Way label */}
+                  {order.status === 'DISPATCHED' && (
+                    <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700">
                       <Truck className="h-4 w-4" />
-                      Dispatch
-                    </Button>
+                      On the Way
+                    </div>
+                  )}
+
+                  {/* DELIVERED → Delivered label */}
+                  {order.status === 'DELIVERED' && (
+                    <div className="inline-flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+                      <CheckCircle className="h-4 w-4" />
+                      Delivered
+                    </div>
+                  )}
+
+                  {/* CANCELLED → Cancelled label */}
+                  {order.status === 'CANCELLED' && (
+                    <div className="inline-flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                      <XCircle className="h-4 w-4" />
+                      Cancelled
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* ✅ Rider / Pickup Info */}
+              {/* ── Rider / Pickup Info ───────────────────────────── */}
               {renderPickupInfo(order)}
             </div>
           </AppCard>
@@ -410,6 +495,7 @@ export function FarmerOrdersPage() {
     )
   }
 
+  // ── Main Render ─────────────────────────────────────────────────────
   return (
     <>
       <PageHeader
@@ -447,7 +533,9 @@ export function FarmerOrdersPage() {
           <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="active">{renderOrderList(activeOrders)}</TabsContent>
+        <TabsContent value="active">
+          {renderOrderList(activeOrders)}
+        </TabsContent>
         <TabsContent value="completed">
           {renderOrderList(completedOrders)}
         </TabsContent>

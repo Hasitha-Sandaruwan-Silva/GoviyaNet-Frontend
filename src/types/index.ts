@@ -161,6 +161,7 @@ export interface Delivery {
 
 export interface DeliveryCreateRequest {
   orderId: number
+  buyerId: number  
   pickupAddress: string
   deliveryAddress: string
   deliveryFee?: number

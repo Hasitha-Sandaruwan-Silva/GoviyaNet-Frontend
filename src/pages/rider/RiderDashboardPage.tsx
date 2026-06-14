@@ -1,6 +1,18 @@
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Bike, User, MapPin, Star, Package, TrendingUp, Zap, Clock, ChevronRight, CheckCircle2, RefreshCw } from 'lucide-react'
+import {
+  Bike,
+  User,
+  MapPin,
+  Star,
+  Package,
+  TrendingUp,
+  Zap,
+  Clock,
+  ChevronRight,
+  CheckCircle2,
+  RefreshCw,
+} from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -30,17 +42,31 @@ interface StatCardProps {
   sub: string
 }
 
-function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub }: StatCardProps) {
+function StatCard({
+  icon: Icon,
+  iconBg,
+  iconColor,
+  label,
+  value,
+  sub,
+}: StatCardProps) {
   return (
     <motion.div variants={staggerItem}>
       <AppCard variant="default" className="h-full">
         <div className="flex items-start gap-4">
-          <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', iconBg)}>
+          <div
+            className={cn(
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+              iconBg
+            )}
+          >
             <Icon className={cn('h-5 w-5', iconColor)} />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-medium text-slate-500">{label}</p>
-            <p className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">{value}</p>
+            <p className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
+              {value}
+            </p>
             <p className="mt-1 text-xs text-slate-400">{sub}</p>
           </div>
         </div>
@@ -52,9 +78,15 @@ function StatCard({ icon: Icon, iconBg, iconColor, label, value, sub }: StatCard
 // ─── Delivery Status Badge ─────────────────────────────────────────────────
 function DeliveryStatusBadge({ status }: { status?: string }) {
   const s = (status ?? 'PENDING').toUpperCase()
-  const colors = DELIVERY_STATUS_COLORS[s] ?? 'bg-slate-100 text-slate-700'
+  const colors =
+    DELIVERY_STATUS_COLORS[s] ?? 'bg-slate-100 text-slate-700'
   return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize', colors)}>
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold capitalize',
+        colors
+      )}
+    >
       {s.toLowerCase().replace(/_/g, ' ')}
     </span>
   )
@@ -77,7 +109,6 @@ export function RiderDashboardPage() {
     currentLocation: '',
   })
 
-  // Per-order fee state (rider can set their own price per order)
   const [orderFees, setOrderFees] = useState<Record<number, number>>({})
   const getOrderFee = (orderId: number) => orderFees[orderId] ?? 250
 
@@ -87,7 +118,7 @@ export function RiderDashboardPage() {
     queryFn: () => deliveryApi.getRiders(),
   })
 
-  const rider = riders.find((r) => r.userId === user?.id)
+  const rider = riders.find((r) => Number(r.userId) === Number(user?.id))
 
   const {
     data: deliveries = [],
@@ -98,40 +129,63 @@ export function RiderDashboardPage() {
     queryKey: ['deliveries', rider?.id],
     queryFn: () => deliveryApi.getDeliveriesByRider(rider!.id),
     enabled: !!rider?.id,
+    refetchInterval: 15000,
   })
 
-  // ── Available Orders Queries ──────────────────────────────────────────────────
-  const { data: allOrders = [], isLoading: ordersLoading, refetch: refetchOrders } = useQuery<Order[]>({
+  const {
+    data: allOrders = [],
+    isLoading: ordersLoading,
+    refetch: refetchOrders,
+  } = useQuery<Order[]>({
     queryKey: ['orders', 'all'],
     queryFn: () => buyerApi.getAllOrders(),
     enabled: !!rider?.available,
+    refetchInterval: 10000,
   })
 
-  const { data: allDeliveries = [], isLoading: allDeliveriesLoading } = useQuery<Delivery[]>({
-    queryKey: ['deliveries', 'all'],
-    queryFn: () => deliveryApi.getAllDeliveries(),
-    enabled: !!rider?.available,
-  })
+  const { data: allDeliveries = [], isLoading: allDeliveriesLoading } =
+    useQuery<Delivery[]>({
+      queryKey: ['deliveries', 'all'],
+      queryFn: () => deliveryApi.getAllDeliveries(),
+      enabled: !!rider?.available,
+      refetchInterval: 10000,
+    })
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const deliveredCount = deliveries.filter((d) => d.status === 'DELIVERED').length
-  const activeCount = deliveries.filter((d) =>
-    d.status === 'ASSIGNED' || d.status === 'PICKED_UP' || d.status === 'IN_TRANSIT'
+  const deliveredCount = deliveries.filter(
+    (d) => d.status === 'DELIVERED'
+  ).length
+  const activeCount = deliveries.filter(
+    (d) =>
+      d.status === 'ASSIGNED' ||
+      d.status === 'PICKED_UP' ||
+      d.status === 'IN_TRANSIT'
   ).length
   const totalCount = deliveries.length
 
-  // Recent active deliveries (max 3 for dashboard preview)
   const recentDeliveries = deliveries
     .filter((d) => d.status !== 'DELIVERED' && d.status !== 'FAILED')
     .slice(0, 3)
 
-  // Available orders for pickup
-  const availableOrders = allOrders.filter((order) => {
-    if (order.status !== 'CONFIRMED') return false
-    const hasDelivery = allDeliveries.some((d) => d.orderId === order.id)
-    if (hasDelivery) return false
-    return true
-  }).sort((a, b) => new Date(b.orderedAt || 0).getTime() - new Date(a.orderedAt || 0).getTime())
+  // ✅ FIX: PENDING සහ CONFIRMED දෙකම accept කරනවා
+  const availableOrders = allOrders
+    .filter((order) => {
+      // PENDING හෝ CONFIRMED status orders විතරයි
+      const isAcceptableStatus =
+        order.status === 'PENDING' || order.status === 'CONFIRMED'
+      if (!isAcceptableStatus) return false
+
+      // Already delivery assign වෙච්ච orders skip කරනවා
+      const hasDelivery = allDeliveries.some((d) => d.orderId === order.id)
+      if (hasDelivery) return false
+
+      return true
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.orderedAt || 0).getTime() -
+        new Date(a.orderedAt || 0).getTime()
+    )
 
   const isAvailableOrdersLoading = ordersLoading || allDeliveriesLoading
 
@@ -178,11 +232,12 @@ export function RiderDashboardPage() {
         const farmer = await farmerApi.getById(order.farmerId)
         if (farmer?.location) pickupAddress = farmer.location
       } catch (err) {
-        console.warn('Failed to fetch farmer location, using fallback.')
+        console.warn('Failed to fetch farmer location, using fallback.', err)
       }
 
       const newDelivery = await deliveryApi.createDelivery({
         orderId: order.id,
+        buyerId: order.buyerId,
         pickupAddress,
         deliveryAddress: order.deliveryAddress,
         deliveryFee: fee,
@@ -190,11 +245,23 @@ export function RiderDashboardPage() {
       })
 
       await deliveryApi.assignRider(newDelivery.id, rider!.id)
+
+      try {
+        await buyerApi.updateOrderStatus(order.id, {
+          status: 'DISPATCHED',
+        })
+      } catch (err) {
+        console.warn('Order status update failed:', err)
+      }
+
       return newDelivery
     },
     onMutate: ({ order }) => setAcceptingOrderId(order.id),
     onSuccess: () => {
-      toast.success('Delivery Accepted', 'The order has been assigned to you.')
+      toast.success(
+        'Delivery Accepted',
+        'The order has been assigned to you.'
+      )
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       queryClient.invalidateQueries({ queryKey: ['deliveries'] })
       setAcceptingOrderId(null)
@@ -207,7 +274,6 @@ export function RiderDashboardPage() {
 
   const isLoading = ridersLoading || deliveriesLoading
 
-  // ── Loading state ─────────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <>
@@ -221,7 +287,6 @@ export function RiderDashboardPage() {
     )
   }
 
-  // ── Not registered ─────────────────────────────────────────────────────────
   if (!rider) {
     return (
       <>
@@ -246,41 +311,56 @@ export function RiderDashboardPage() {
                   <User className="h-5 w-5 text-brand-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-slate-900">Rider Registration</h3>
-                  <p className="text-sm text-slate-500">Fill in your details to get started</p>
+                  <h3 className="font-semibold text-slate-900">
+                    Rider Registration
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    Fill in your details to get started
+                  </p>
                 </div>
               </div>
               <div className="space-y-4 max-w-md">
-                {/* Full Name */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Full Name
+                  </label>
                   <input
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                     placeholder="Your Full Name"
                     value={form.fullName}
-                    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, fullName: e.target.value })
+                    }
                   />
                 </div>
 
-                {/* Phone */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Phone Number
+                  </label>
                   <input
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                     placeholder="0712345678"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, phone: e.target.value })
+                    }
                   />
                 </div>
 
-                {/* Vehicle Type */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Vehicle Type</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Vehicle Type
+                  </label>
                   <select
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                     value={form.vehicleType}
                     onChange={(e) =>
-                      setForm({ ...form, vehicleType: e.target.value as typeof form.vehicleType })
+                      setForm({
+                        ...form,
+                        vehicleType: e.target
+                          .value as typeof form.vehicleType,
+                      })
                     }
                   >
                     {VEHICLE_TYPES.map((type) => (
@@ -291,25 +371,31 @@ export function RiderDashboardPage() {
                   </select>
                 </div>
 
-                {/* License No */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">License Number</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    License Number
+                  </label>
                   <input
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                     placeholder="Your License Number"
                     value={form.licenseNo}
-                    onChange={(e) => setForm({ ...form, licenseNo: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, licenseNo: e.target.value })
+                    }
                   />
                 </div>
 
-                {/* Current Location */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Current Location</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Current Location
+                  </label>
                   <input
                     className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
                     placeholder="e.g. Colombo, Western Province"
                     value={form.currentLocation}
-                    onChange={(e) => setForm({ ...form, currentLocation: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, currentLocation: e.target.value })
+                    }
                   />
                 </div>
 
@@ -325,7 +411,9 @@ export function RiderDashboardPage() {
                     }
                     className="flex-1"
                   >
-                    {registerRider.isPending ? 'Registering...' : 'Register as Rider'}
+                    {registerRider.isPending
+                      ? 'Registering...'
+                      : 'Register as Rider'}
                   </Button>
                   <Button
                     variant="outline"
@@ -351,7 +439,6 @@ export function RiderDashboardPage() {
     )
   }
 
-  // ── Registered Rider Dashboard ────────────────────────────────────────────
   return (
     <>
       <PageHeader
@@ -361,10 +448,14 @@ export function RiderDashboardPage() {
       />
 
       {/* ── Rider Profile + Availability Card ──────────────────────────── */}
-      <motion.div variants={fadeInUp} initial="hidden" animate="visible" className="mb-6">
+      <motion.div
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+        className="mb-6"
+      >
         <AppCard variant="gradient">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            {/* Profile Info */}
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-600 shadow-lg">
                 <span className="text-lg font-bold text-white">
@@ -377,7 +468,9 @@ export function RiderDashboardPage() {
                 </span>
               </div>
               <div>
-                <h2 className="font-semibold text-slate-900">{rider.fullName}</h2>
+                <h2 className="font-semibold text-slate-900">
+                  {rider.fullName}
+                </h2>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                   <span className="flex items-center gap-1">
                     <Bike className="h-3.5 w-3.5" />
@@ -394,18 +487,26 @@ export function RiderDashboardPage() {
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 text-xs text-slate-400">License: {rider.licenseNo}</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  License: {rider.licenseNo}
+                </p>
               </div>
             </div>
 
-            {/* Availability Toggle */}
             <div className="flex items-center gap-3 sm:flex-col sm:items-end">
               <div className="text-right">
-                <p className={cn('text-sm font-semibold', rider.available ? 'text-green-700' : 'text-slate-500')}>
+                <p
+                  className={cn(
+                    'text-sm font-semibold',
+                    rider.available ? 'text-green-700' : 'text-slate-500'
+                  )}
+                >
                   {rider.available ? 'Online — Ready' : 'Offline'}
                 </p>
                 <p className="text-xs text-slate-400">
-                  {rider.available ? 'Accepting deliveries' : 'Go online to accept jobs'}
+                  {rider.available
+                    ? 'Accepting deliveries'
+                    : 'Go online to accept jobs'}
                 </p>
               </div>
               <button
@@ -415,7 +516,8 @@ export function RiderDashboardPage() {
                 className={cn(
                   'relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2',
                   rider.available ? 'bg-green-500' : 'bg-slate-300',
-                  updateAvailability.isPending && 'opacity-60 cursor-not-allowed'
+                  updateAvailability.isPending &&
+                    'opacity-60 cursor-not-allowed'
                 )}
               >
                 <span
@@ -472,21 +574,37 @@ export function RiderDashboardPage() {
       </motion.div>
 
       {/* ── Available Orders for Pickup ─────────────────────────────────────── */}
-      <motion.div variants={fadeInUp} initial="hidden" animate="visible" className="mb-8">
+      <motion.div
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+        className="mb-8"
+      >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Available Orders</h2>
-            <p className="text-sm text-slate-500">Pick up these ready orders</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Available Orders
+            </h2>
+            <p className="text-sm text-slate-500">
+              All pending & confirmed orders · Auto-refreshes every 10s
+            </p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-slate-500 hover:text-brand-600"
-            onClick={() => refetchOrders()}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {availableOrders.length > 0 && (
+              <span className="rounded-full bg-brand-100 px-2.5 py-1 text-xs font-semibold text-brand-700">
+                {availableOrders.length} available
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-slate-500 hover:text-brand-600"
+              onClick={() => refetchOrders()}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {!rider.available ? (
@@ -495,13 +613,21 @@ export function RiderDashboardPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                 <Bike className="h-7 w-7 text-slate-400" />
               </div>
-              <p className="font-medium text-slate-700">Go online to see available orders</p>
+              <p className="font-medium text-slate-700">
+                Go online to see available orders
+              </p>
+              <p className="text-sm text-slate-400">
+                Toggle the switch above to start receiving delivery requests
+              </p>
             </div>
           </AppCard>
         ) : isAvailableOrdersLoading ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <AppCard key={i} className="animate-pulse flex flex-col justify-between">
+              <AppCard
+                key={i}
+                className="animate-pulse flex flex-col justify-between"
+              >
                 <div>
                   <div className="mb-3 h-5 w-24 rounded bg-slate-200"></div>
                   <div className="mb-4 h-12 w-full rounded bg-slate-100"></div>
@@ -520,19 +646,33 @@ export function RiderDashboardPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50">
                 <CheckCircle2 className="h-7 w-7 text-brand-400" />
               </div>
-              <p className="font-medium text-slate-700">No orders available right now</p>
-              <p className="text-sm text-slate-400">New orders will appear here automatically when buyers confirm them</p>
+              <p className="font-medium text-slate-700">
+                No orders available right now
+              </p>
+              <p className="text-sm text-slate-400">
+                New orders will appear here automatically when buyers place them
+              </p>
             </div>
           </AppCard>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {availableOrders.map((order) => (
-              <AppCard key={order.id} hover className="flex flex-col justify-between">
+              <AppCard
+                key={order.id}
+                hover
+                className="flex flex-col justify-between"
+              >
                 <div>
                   <div className="mb-3 flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">Order #{order.id}</span>
+                    <span className="font-semibold text-slate-900">
+                      Order #{order.id}
+                    </span>
                     <span className="text-xs font-medium text-slate-500">
-                      {order.orderedAt ? formatDistanceToNow(new Date(order.orderedAt), { addSuffix: true }) : ''}
+                      {order.orderedAt
+                        ? formatDistanceToNow(new Date(order.orderedAt), {
+                            addSuffix: true,
+                          })
+                        : ''}
                     </span>
                   </div>
                   <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 p-2.5">
@@ -541,9 +681,12 @@ export function RiderDashboardPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-slate-900">
-                        {order.produce?.name || 'Produce'} - {order.quantity}kg
+                        {order.produce?.name || 'Produce'} -{' '}
+                        {order.quantity}kg
                       </p>
-                      <p className="text-xs text-slate-500">Ready for pickup</p>
+                      <p className="text-xs text-slate-500">
+                        Ready for pickup
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-3 mb-5">
@@ -551,16 +694,22 @@ export function RiderDashboardPage() {
                       <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                       <div>
                         <p className="font-medium text-slate-900">Drop-off</p>
-                        <p className="line-clamp-2 text-xs text-slate-500">{order.deliveryAddress}</p>
+                        <p className="line-clamp-2 text-xs text-slate-500">
+                          {order.deliveryAddress}
+                        </p>
                       </div>
                     </div>
                   </div>
                 </div>
                 <div className="mt-auto flex items-end gap-3 border-t border-slate-100 pt-4">
                   <div className="flex-1">
-                    <label className="text-xs text-slate-500 block mb-1">Your Fee (LKR)</label>
+                    <label className="text-xs text-slate-500 block mb-1">
+                      Your Fee (LKR)
+                    </label>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold text-slate-600">LKR</span>
+                      <span className="text-sm font-semibold text-slate-600">
+                        LKR
+                      </span>
                       <input
                         type="number"
                         min={0}
@@ -569,7 +718,10 @@ export function RiderDashboardPage() {
                         onChange={(e) =>
                           setOrderFees((prev) => ({
                             ...prev,
-                            [order.id]: Math.max(0, Number(e.target.value) || 0),
+                            [order.id]: Math.max(
+                              0,
+                              Number(e.target.value) || 0
+                            ),
                           }))
                         }
                         onClick={(e) => e.stopPropagation()}
@@ -579,7 +731,10 @@ export function RiderDashboardPage() {
                   </div>
                   <Button
                     onClick={() =>
-                      acceptDelivery.mutate({ order, fee: getOrderFee(order.id) })
+                      acceptDelivery.mutate({
+                        order,
+                        fee: getOrderFee(order.id),
+                      })
                     }
                     disabled={
                       acceptingOrderId !== null ||
@@ -588,7 +743,9 @@ export function RiderDashboardPage() {
                     }
                     className="shrink-0"
                   >
-                    {acceptingOrderId === order.id ? 'Accepting...' : 'Accept Delivery'}
+                    {acceptingOrderId === order.id
+                      ? 'Accepting...'
+                      : 'Accept Delivery'}
                   </Button>
                 </div>
               </AppCard>
@@ -598,11 +755,20 @@ export function RiderDashboardPage() {
       </motion.div>
 
       {/* ── Active Deliveries Preview ──────────────────────────────────────── */}
-      <motion.div variants={fadeInUp} initial="hidden" animate="visible" transition={{ delay: 0.2 }}>
+      <motion.div
+        variants={fadeInUp}
+        initial="hidden"
+        animate="visible"
+        transition={{ delay: 0.2 }}
+      >
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Active Deliveries</h2>
-            <p className="text-sm text-slate-500">Your current in-progress jobs</p>
+            <h2 className="text-lg font-semibold text-slate-900">
+              Active Deliveries
+            </h2>
+            <p className="text-sm text-slate-500">
+              Your current in-progress jobs
+            </p>
           </div>
           <Button
             variant="ghost"
@@ -618,8 +784,14 @@ export function RiderDashboardPage() {
         {deliveriesError ? (
           <AppCard>
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <p className="text-sm text-red-600">Failed to load deliveries.</p>
-              <Button variant="outline" size="sm" onClick={() => refetchDeliveries()}>
+              <p className="text-sm text-red-600">
+                Failed to load deliveries.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchDeliveries()}
+              >
                 Retry
               </Button>
             </div>
@@ -630,7 +802,9 @@ export function RiderDashboardPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                 <Package className="h-7 w-7 text-slate-400" />
               </div>
-              <p className="font-medium text-slate-700">No active deliveries</p>
+              <p className="font-medium text-slate-700">
+                No active deliveries
+              </p>
               <p className="text-sm text-slate-400">
                 {rider.available
                   ? 'New assignments will appear here automatically.'
@@ -647,27 +821,34 @@ export function RiderDashboardPage() {
           >
             {recentDeliveries.map((delivery) => (
               <motion.div key={delivery.id} variants={staggerItem}>
-                <AppCard variant="default" hover className="cursor-pointer" >
+                <AppCard variant="default" hover className="cursor-pointer">
                   <div
                     className="flex items-start justify-between gap-4"
                     onClick={() => navigate('/rider/deliveries')}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter') navigate('/rider/deliveries') }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') navigate('/rider/deliveries')
+                    }}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                        <span className="font-semibold text-slate-900">Order #{delivery.orderId}</span>
+                        <span className="font-semibold text-slate-900">
+                          Order #{delivery.orderId}
+                        </span>
                         <DeliveryStatusBadge status={delivery.status} />
                       </div>
                       <div className="flex items-start gap-1.5 text-sm text-slate-500">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-                        <span className="truncate">{delivery.deliveryAddress}</span>
+                        <span className="truncate">
+                          {delivery.deliveryAddress}
+                        </span>
                       </div>
                       {delivery.assignedAt && (
                         <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
                           <Clock className="h-3 w-3" />
-                          Assigned {new Date(delivery.assignedAt).toLocaleString()}
+                          Assigned{' '}
+                          {new Date(delivery.assignedAt).toLocaleString()}
                         </div>
                       )}
                     </div>
@@ -688,7 +869,10 @@ export function RiderDashboardPage() {
 
         {recentDeliveries.length > 0 && (
           <div className="mt-4 text-center">
-            <Button variant="outline" onClick={() => navigate('/rider/deliveries')}>
+            <Button
+              variant="outline"
+              onClick={() => navigate('/rider/deliveries')}
+            >
               Go to all deliveries →
             </Button>
           </div>

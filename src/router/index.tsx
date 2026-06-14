@@ -18,7 +18,6 @@ const LoginPage = lazy(() =>
 const RegisterPage = lazy(() =>
   import('@/pages/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })),
 )
-
 const FarmerDashboardPage = lazy(() =>
   import('@/pages/farmer/FarmerDashboardPage').then((m) => ({ default: m.FarmerDashboardPage })),
 )
@@ -31,7 +30,6 @@ const FarmerProducePage = lazy(() =>
 const FarmerOrdersPage = lazy(() =>
   import('@/pages/farmer/FarmerOrdersPage').then((m) => ({ default: m.FarmerOrdersPage })),
 )
-
 const BuyerDashboardPage = lazy(() =>
   import('@/pages/buyer/BuyerDashboardPage').then((m) => ({ default: m.BuyerDashboardPage })),
 )
@@ -50,14 +48,12 @@ const BuyerOrdersPage = lazy(() =>
 const BuyerPricesPage = lazy(() =>
   import('@/pages/buyer/BuyerPricesPage').then((m) => ({ default: m.BuyerPricesPage })),
 )
-
 const RiderDashboardPage = lazy(() =>
   import('@/pages/rider/RiderDashboardPage').then((m) => ({ default: m.RiderDashboardPage })),
 )
 const RiderDeliveriesPage = lazy(() =>
   import('@/pages/rider/RiderDeliveriesPage').then((m) => ({ default: m.RiderDeliveriesPage })),
 )
-
 const AdminDashboardPage = lazy(() =>
   import('@/pages/admin/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 )
@@ -66,6 +62,9 @@ const AdminFarmersPage = lazy(() =>
 )
 const AdminPricesPage = lazy(() =>
   import('@/pages/admin/AdminPricesPage').then((m) => ({ default: m.AdminPricesPage })),
+)
+const NotificationsPage = lazy(() =>
+  import('@/pages/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
 )
 
 export function AppRoutes() {
@@ -85,6 +84,7 @@ export function AppRoutes() {
             <Route path="/farmer/profile" element={<FarmerProfilePage />} />
             <Route path="/farmer/produce" element={<FarmerProducePage />} />
             <Route path="/farmer/orders" element={<FarmerOrdersPage />} />
+            <Route path="/farmer/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>
 
@@ -97,6 +97,7 @@ export function AppRoutes() {
             <Route path="/buyer/checkout" element={<BuyerCheckoutPage />} />
             <Route path="/buyer/orders" element={<BuyerOrdersPage />} />
             <Route path="/buyer/prices" element={<BuyerPricesPage />} />
+            <Route path="/buyer/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>
 
@@ -105,6 +106,7 @@ export function AppRoutes() {
           <Route element={<DashboardLayout role="RIDER" navItems={RIDER_NAV} />}>
             <Route path="/rider" element={<RiderDashboardPage />} />
             <Route path="/rider/deliveries" element={<RiderDeliveriesPage />} />
+            <Route path="/rider/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>
 
@@ -114,6 +116,7 @@ export function AppRoutes() {
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/farmers" element={<AdminFarmersPage />} />
             <Route path="/admin/prices" element={<AdminPricesPage />} />
+            <Route path="/admin/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>
 

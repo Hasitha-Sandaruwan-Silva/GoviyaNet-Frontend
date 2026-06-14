@@ -18,16 +18,19 @@ export function NotificationBell() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
 
+  // ✅ refetchInterval: 15s — auto polling
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications', user?.id],
     queryFn: () => notificationApi.getUserNotifications(user!.id),
     enabled: Boolean(user?.id),
+    refetchInterval: 15000,
   })
 
   const { data: unreadNotifications = [] } = useQuery({
     queryKey: ['notifications-unread', user?.id],
     queryFn: () => notificationApi.getUnread(user!.id),
     enabled: Boolean(user?.id),
+    refetchInterval: 15000,  // ✅ 15s polling
   })
 
   const unreadCount = unreadNotifications.length
@@ -57,14 +60,29 @@ export function NotificationBell() {
           <span className="relative inline-flex">
             <Bell className="h-5 w-5" />
             {unreadCount > 0 ? (
-              <span className="absolute right-0 top-0 flex h-2 w-2 rounded-full bg-red-500" />
+              <span className="absolute right-0 top-0 flex h-2 w-2 rounded-full bg-red-500">
+                {/* ✅ Pulsing dot for unread */}
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              </span>
             ) : null}
           </span>
+          {/* ✅ Unread count badge */}
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <div className="flex items-center justify-between px-2 py-1">
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            Notifications
+            {unreadCount > 0 && (
+              <span className="ml-2 text-xs text-red-500 font-normal">({unreadCount} unread)</span>
+            )}
+          </DropdownMenuLabel>
           {unreadCount > 0 ? (
             <Button
               variant="ghost"
@@ -83,22 +101,41 @@ export function NotificationBell() {
             <p className="text-center text-sm text-slate-500">All caught up! 🎉</p>
           </div>
         ) : (
-          notifications.slice(0, 5).map((notification) => (
-            <DropdownMenuItem
-              key={notification.id}
-              className={cn(
-                'flex cursor-pointer flex-col items-start gap-1 p-3',
-                !notification.isRead && 'bg-brand-50/50',
-              )}
-              onClick={() => !notification.isRead && markRead.mutate(notification.id)}
-            >
-              <span className="font-medium text-slate-900">{notification.title}</span>
-              <span className="text-xs text-slate-500 line-clamp-2">{notification.message}</span>
-              <span className="text-xs text-slate-400">
-                {formatDistanceToNow(new Date(notification.sentAt), { addSuffix: true })}
-              </span>
-            </DropdownMenuItem>
-          ))
+          <>
+            {notifications.slice(0, 5).map((notification) => (
+              <DropdownMenuItem
+                key={notification.id}
+                className={cn(
+                  'flex cursor-pointer flex-col items-start gap-1 p-3',
+                  !notification.isRead && 'bg-brand-50/50',
+                )}
+                onClick={() => !notification.isRead && markRead.mutate(notification.id)}
+              >
+                <div className="flex w-full items-start justify-between gap-2">
+                  <span className="font-medium text-slate-900 text-sm">{notification.title}</span>
+                  {!notification.isRead && (
+                    <span className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                  )}
+                </div>
+                <span className="text-xs text-slate-500 line-clamp-2">{notification.message}</span>
+                <span className="text-xs text-slate-400">
+                  {formatDistanceToNow(new Date(notification.sentAt), { addSuffix: true })}
+                </span>
+              </DropdownMenuItem>
+            ))}
+            {/* ✅ View All link */}
+            {notifications.length > 5 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-center text-xs text-brand-600 cursor-pointer justify-center py-2"
+                  onClick={() => window.location.href = '/notifications'}
+                >
+                  View all {notifications.length} notifications →
+                </DropdownMenuItem>
+              </>
+            )}
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

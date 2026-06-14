@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CreditCard, Loader } from 'lucide-react'
+import { AlertTriangle, CreditCard, Loader } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { AppCard } from '@/components/shared/AppCard'
@@ -30,64 +30,88 @@ export function BuyerCheckoutPage() {
   const [district, setDistrict] = useState('')
   const [addressLine, setAddressLine] = useState('')
 
-  // Load cart items
   const { data: cartItems = [], isLoading: isLoadingCart } = useQuery({
     queryKey: ['cart', user?.id],
     queryFn: () => buyerApi.getCart(user!.id),
     enabled: !!user?.id,
   })
 
-  // Create orders mutation
   const createOrders = useMutation({
     mutationFn: async () => {
       if (!district || !addressLine.trim()) {
         throw new Error('Please fill in all delivery details')
       }
+
       const deliveryAddress = `${district}, ${addressLine}`
-      
-      // Validation BEFORE placing order
+
+      // ── Stock validation ──
       for (const item of cartItems) {
         const produceList = await farmerApi.getProduceByFarmer(item.farmerId)
         const produce = produceList.find((p) => p.id === item.produceId)
+
         if (!produce) {
-          throw new Error(`Produce not found`)
+          throw new Error('Produce not found')
         }
+
         if (item.quantity > produce.stockKg) {
-          throw new Error(`Only ${produce.stockKg} kg available in stock for ${produce.name}`)
+          throw new Error(`Only ${produce.stockKg} kg available for ${produce.name}`)
         }
       }
 
-      // Create one order per cart item
-      const orderPromises = cartItems.map((item) =>
-        buyerApi.createOrder({
-          buyerId: user!.id,
-          produceId: item.produceId,
-          farmerId: item.farmerId,
-          quantity: item.quantity,
-          pricePerKg: item.pricePerKg,
-          deliveryAddress,
-        })
-      )
-      
-      await Promise.all(orderPromises)
-      
-      // Update stock
+      // ── Create orders ──
+      const orderPromises = cartItems.map(async (item) => {
+        try {
+          return await buyerApi.createOrder({
+            buyerId: user!.id,
+            produceId: item.produceId,
+            farmerId: item.farmerId,
+            quantity: item.quantity,
+            pricePerKg: item.pricePerKg,
+            deliveryAddress,
+          })
+        } catch (error: unknown) {
+          const e = error as { response?: { status: number; data?: { message: string } } }
+
+          if (e.response?.status === 409) {
+            throw new Error(e.response.data?.message || 'Item out of stock.', { cause: error })
+          }
+
+          throw error
+        }
+      })
+
+      const createdOrders = await Promise.all(orderPromises)
+
+      // ── Update stock ──
       for (const item of cartItems) {
         const produceList = await farmerApi.getProduceByFarmer(item.farmerId)
         const produce = produceList.find((p) => p.id === item.produceId)
+
         if (produce) {
-          const newStock = produce.stockKg - item.quantity
-          await farmerApi.updateStock(produce.id, newStock)
+          await farmerApi.updateStock(produce.id, produce.stockKg - item.quantity)
         }
       }
-      
-      // Clear cart after successful orders
+
+      // ❌ REMOVED: delivery create logic
+      // Delivery record is created when a Rider accepts the order.
+      // Proper flow: PENDING → Farmer confirms → CONFIRMED → Rider accepts → Delivery
+
+      // ── Clear cart ──
       await buyerApi.clearCart(user!.id)
+
+      return createdOrders
     },
-    onSuccess: () => {
+    onSuccess: (createdOrders) => {
       void queryClient.invalidateQueries({ queryKey: ['cart'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
-      toast.success('Orders placed!', 'Your orders have been placed successfully.')
+
+      const finalTotal = createdOrders.reduce((sum, o) => sum + (o.totalPrice || 0), 0)
+
+      toast.success(
+        'Order request placed!',
+        `Total order value: LKR ${finalTotal.toFixed(2)}. Waiting for farmer confirmation.`
+      )
+
       navigate('/buyer/orders')
     },
     onError: (e) => toast.error('Failed', parseApiError(e)),
@@ -98,7 +122,7 @@ export function BuyerCheckoutPage() {
       <>
         <PageHeader
           title="Checkout"
-          description="Delivery address and order review."
+          description="Review your items and confirm delivery details."
           icon={CreditCard}
         />
         <div className="grid gap-6 lg:grid-cols-2">
@@ -114,7 +138,7 @@ export function BuyerCheckoutPage() {
       <>
         <PageHeader
           title="Checkout"
-          description="Delivery address and order review."
+          description="Review your items and confirm delivery details."
           icon={CreditCard}
         />
         <EmptyState
@@ -128,24 +152,36 @@ export function BuyerCheckoutPage() {
     )
   }
 
-  const totalPrice = cartItems.reduce((sum, item) => sum + (item.quantity * item.pricePerKg), 0)
+  const totalPrice = cartItems.reduce((sum, item) => sum + item.quantity * item.pricePerKg, 0)
 
   return (
     <>
       <PageHeader
         title="Checkout"
-        description="Delivery address and order review."
+        description="Review your items and confirm delivery details."
         icon={CreditCard}
       />
+
+      <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-600" />
+          <div>
+            <h3 className="font-semibold text-amber-900">Payment Module Pending</h3>
+            <p className="mt-1 text-sm text-amber-800">
+              This prototype currently supports order placement and delivery coordination only.
+              Online payment and automated farmer settlement are not integrated yet.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Delivery Address Form */}
         <AppCard>
           <h3 className="mb-4 font-semibold text-slate-900">Delivery Address</h3>
+
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                District
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-700">District</label>
               <Select value={district} onValueChange={setDistrict}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select district" />
@@ -159,10 +195,9 @@ export function BuyerCheckoutPage() {
                 </SelectContent>
               </Select>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Address Line
-              </label>
+              <label className="mb-2 block text-sm font-medium text-slate-700">Address Line</label>
               <textarea
                 value={addressLine}
                 onChange={(e) => setAddressLine(e.target.value)}
@@ -174,11 +209,11 @@ export function BuyerCheckoutPage() {
           </div>
         </AppCard>
 
-        {/* Order Summary */}
         <div className="space-y-4">
           <AppCard variant="gradient">
             <h3 className="mb-4 font-semibold text-slate-900">Order Items ({cartItems.length})</h3>
-            <div className="space-y-2 mb-4 max-h-40 overflow-y-auto">
+
+            <div className="mb-4 max-h-40 space-y-2 overflow-y-auto">
               {cartItems.map((item) => (
                 <div key={item.id} className="flex justify-between text-sm">
                   <span className="text-slate-600">
@@ -190,6 +225,7 @@ export function BuyerCheckoutPage() {
                 </div>
               ))}
             </div>
+
             <div className="border-t border-brand-200 pt-3">
               <div className="flex justify-between">
                 <span className="text-sm font-medium text-slate-600">Grand Total</span>
@@ -199,22 +235,38 @@ export function BuyerCheckoutPage() {
           </AppCard>
 
           <AppCard>
-            <p className="text-sm text-slate-600 mb-4">
-              💳 <strong>Payment:</strong> Cash on Delivery
-            </p>
+            <h3 className="mb-4 font-semibold text-slate-900">Payment Information</h3>
+
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-600">Payment Mode</span>
+                <span className="font-medium text-slate-900">Manual Payment (Prototype)</span>
+              </div>
+
+              <div className="flex justify-between gap-4">
+                <span className="text-slate-600">Payment Status</span>
+                <span className="font-medium text-amber-700">Pending</span>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-600">
+                This order will be recorded in the system, but payment processing is not automated
+                in the current version.
+              </div>
+            </div>
+
             <Button
               onClick={() => createOrders.mutate()}
               disabled={createOrders.isPending || !district || !addressLine.trim()}
-              className="w-full"
+              className="mt-4 w-full"
               size="lg"
             >
               {createOrders.isPending ? (
                 <>
                   <Loader className="mr-2 h-4 w-4 animate-spin" />
-                  Placing Order...
+                  Confirming Order...
                 </>
               ) : (
-                'Place Order'
+                'Confirm Order'
               )}
             </Button>
           </AppCard>
