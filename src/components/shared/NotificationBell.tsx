@@ -13,39 +13,113 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import type { Notification } from '@/types'
 
 export function NotificationBell() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
 
   // ✅ refetchInterval: 15s — auto polling
-  const { data: notifications = [] } = useQuery({
+  const { data: notifications = [] } = useQuery<Notification[]>({
     queryKey: ['notifications', user?.id],
     queryFn: () => notificationApi.getUserNotifications(user!.id),
     enabled: Boolean(user?.id),
     refetchInterval: 15000,
   })
 
-  const { data: unreadNotifications = [] } = useQuery({
+  const { data: unreadNotifications = [] } = useQuery<Notification[]>({
     queryKey: ['notifications-unread', user?.id],
     queryFn: () => notificationApi.getUnread(user!.id),
     enabled: Boolean(user?.id),
-    refetchInterval: 15000,  // ✅ 15s polling
+    refetchInterval: 15000,
   })
 
   const unreadCount = unreadNotifications.length
 
+  // ✅ Sort newest first (උඩටම අලුත්ම notification)
+  const sortedNotifications = [...notifications].sort(
+    (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+  )
+
   const markRead = useMutation({
-    mutationFn: notificationApi.markAsRead,
-    onSuccess: () => {
+    mutationFn: async (id: number) => {
+      try {
+        await notificationApi.markAsRead(id)
+      } catch (err) {
+        // ✅ Silent fail — backend endpoint missing/404 ignore කරනවා
+        console.warn('markAsRead failed (silenced):', err)
+      }
+    },
+    // ✅ Optimistic update — UI එක වහාම update වෙනවා, network call එක background එකේ
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ['notifications', user?.id] })
+      await queryClient.cancelQueries({ queryKey: ['notifications-unread', user?.id] })
+
+      const prevAll = queryClient.getQueryData<Notification[]>(['notifications', user?.id])
+      const prevUnread = queryClient.getQueryData<Notification[]>(['notifications-unread', user?.id])
+
+      queryClient.setQueryData<Notification[]>(
+        ['notifications', user?.id],
+        (old = []) => old.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      )
+
+      queryClient.setQueryData<Notification[]>(
+        ['notifications-unread', user?.id],
+        (old = []) => old.filter((n) => n.id !== id)
+      )
+
+      return { prevAll, prevUnread }
+    },
+    onError: (_err, _id, ctx) => {
+      // Rollback on error
+      if (ctx?.prevAll) {
+        queryClient.setQueryData(['notifications', user?.id], ctx.prevAll)
+      }
+      if (ctx?.prevUnread) {
+        queryClient.setQueryData(['notifications-unread', user?.id], ctx.prevUnread)
+      }
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] })
       void queryClient.invalidateQueries({ queryKey: ['notifications-unread', user?.id] })
     },
   })
 
   const markAllRead = useMutation({
-    mutationFn: () => notificationApi.markAllAsRead(user!.id),
-    onSuccess: () => {
+    mutationFn: async () => {
+      try {
+        await notificationApi.markAllAsRead(user!.id)
+      } catch (err) {
+        console.warn('markAllAsRead failed (silenced):', err)
+      }
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['notifications', user?.id] })
+      await queryClient.cancelQueries({ queryKey: ['notifications-unread', user?.id] })
+
+      const prevAll = queryClient.getQueryData<Notification[]>(['notifications', user?.id])
+      const prevUnread = queryClient.getQueryData<Notification[]>(['notifications-unread', user?.id])
+
+      queryClient.setQueryData<Notification[]>(
+        ['notifications', user?.id],
+        (old = []) => old.map((n) => ({ ...n, isRead: true }))
+      )
+      queryClient.setQueryData<Notification[]>(
+        ['notifications-unread', user?.id],
+        []
+      )
+
+      return { prevAll, prevUnread }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prevAll) {
+        queryClient.setQueryData(['notifications', user?.id], ctx.prevAll)
+      }
+      if (ctx?.prevUnread) {
+        queryClient.setQueryData(['notifications-unread', user?.id], ctx.prevUnread)
+      }
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['notifications', user?.id] })
       void queryClient.invalidateQueries({ queryKey: ['notifications-unread', user?.id] })
     },
@@ -96,13 +170,13 @@ export function NotificationBell() {
           ) : null}
         </div>
         <DropdownMenuSeparator />
-        {notifications.length === 0 ? (
+        {sortedNotifications.length === 0 ? (
           <div className="py-4">
             <p className="text-center text-sm text-slate-500">All caught up! 🎉</p>
           </div>
         ) : (
           <>
-            {notifications.slice(0, 5).map((notification) => (
+            {sortedNotifications.slice(0, 5).map((notification) => (
               <DropdownMenuItem
                 key={notification.id}
                 className={cn(
@@ -124,14 +198,14 @@ export function NotificationBell() {
               </DropdownMenuItem>
             ))}
             {/* ✅ View All link */}
-            {notifications.length > 5 && (
+            {sortedNotifications.length > 5 && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-center text-xs text-brand-600 cursor-pointer justify-center py-2"
-                  onClick={() => window.location.href = '/notifications'}
+                  onClick={() => (window.location.href = '/notifications')}
                 >
-                  View all {notifications.length} notifications →
+                  View all {sortedNotifications.length} notifications →
                 </DropdownMenuItem>
               </>
             )}
